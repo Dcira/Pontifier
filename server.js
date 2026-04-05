@@ -18,6 +18,10 @@ import dashboardRoutes from "./src/routes/dashboard.routes.js";
 import collegesRoutes from "./src/routes/colleges.routes.js";
 
 const app = express();
+
+// Trust the first proxy — required when deployed behind a load balancer/reverse proxy
+app.set("trust proxy", 1);
+
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
 app.use(helmet());
