@@ -2,8 +2,12 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../config/db.js";
 
 const DELEGATE_LIST_SELECT = Prisma.sql`
-  SELECT d.id, d.name, d.contact, d.notes, d.status::text AS status, d.college_id, d.created_at, d.updated_at,
+  SELECT d.id, d.name, d.contact, d.notes, d.status::text AS status,
+         d.college_id, d.school_id, d.department_id, d.reg_number,
+         d.created_at, d.updated_at,
          c.name AS college_name, c.code AS college_code,
+         s.name AS school_name, s.code AS school_code,
+         dep.name AS department_name,
          (
            SELECT COALESCE(json_agg(json_build_object('id', u.id, 'name', u.name)), '[]'::json)
            FROM delegate_assignments da
@@ -17,11 +21,19 @@ const DELEGATE_LIST_SELECT = Prisma.sql`
          ) AS last_contact_date
   FROM delegates d
   JOIN colleges c ON c.id = d.college_id
+  LEFT JOIN schools s ON s.id = d.school_id
+  LEFT JOIN departments dep ON dep.id = d.department_id
 `;
 
 function applyListFilters(conditions, filters) {
   if (filters.college_id) {
     conditions.push(Prisma.sql`d.college_id = ${Number(filters.college_id)}`);
+  }
+  if (filters.school_id) {
+    conditions.push(Prisma.sql`d.school_id = ${Number(filters.school_id)}`);
+  }
+  if (filters.department_id) {
+    conditions.push(Prisma.sql`d.department_id = ${Number(filters.department_id)}`);
   }
   if (filters.status) {
     conditions.push(Prisma.sql`d.status = ${filters.status}::delegate_status`);
@@ -39,7 +51,7 @@ function applyListFilters(conditions, filters) {
 export async function selectDelegatesForAdmin(filters) {
   const conditions = [Prisma.sql`TRUE`];
   applyListFilters(conditions, filters);
-  const whereClause = Prisma.join(conditions, Prisma.sql` AND `);
+  const whereClause = conditions.reduce((acc, c) => Prisma.sql`${acc} AND ${c}`);
   return prisma.$queryRaw`
     ${DELEGATE_LIST_SELECT}
     WHERE ${whereClause}
@@ -50,7 +62,7 @@ export async function selectDelegatesForAdmin(filters) {
 export async function selectDelegatesForCollegeManager(collegeId, filters) {
   const conditions = [Prisma.sql`d.college_id = ${collegeId}`];
   applyListFilters(conditions, filters);
-  const whereClause = Prisma.join(conditions, Prisma.sql` AND `);
+  const whereClause = conditions.reduce((acc, c) => Prisma.sql`${acc} AND ${c}`);
   return prisma.$queryRaw`
     ${DELEGATE_LIST_SELECT}
     WHERE ${whereClause}
@@ -63,7 +75,7 @@ export async function selectDelegatesForTeamMember(teamMemberId, filters) {
     Prisma.sql`EXISTS (SELECT 1 FROM delegate_assignments da0 WHERE da0.delegate_id = d.id AND da0.team_member_id = ${teamMemberId}::uuid)`,
   ];
   applyListFilters(conditions, filters);
-  const whereClause = Prisma.join(conditions, Prisma.sql` AND `);
+  const whereClause = conditions.reduce((acc, c) => Prisma.sql`${acc} AND ${c}`);
   return prisma.$queryRaw`
     ${DELEGATE_LIST_SELECT}
     WHERE ${whereClause}
@@ -73,11 +85,17 @@ export async function selectDelegatesForTeamMember(teamMemberId, filters) {
 
 export async function selectDelegateById(id) {
   const rows = await prisma.$queryRaw`
-    SELECT d.id, d.name, d.contact, d.notes, d.status::text AS status, d.college_id, d.created_at, d.updated_at,
-            c.name AS college_name, c.code AS college_code
-     FROM delegates d
-     JOIN colleges c ON c.id = d.college_id
-     WHERE d.id = ${id}::uuid
+    SELECT d.id, d.name, d.contact, d.notes, d.status::text AS status,
+           d.college_id, d.school_id, d.department_id, d.reg_number,
+           d.created_at, d.updated_at,
+           c.name AS college_name, c.code AS college_code,
+           s.name AS school_name, s.code AS school_code,
+           dep.name AS department_name
+    FROM delegates d
+    JOIN colleges c ON c.id = d.college_id
+    LEFT JOIN schools s ON s.id = d.school_id
+    LEFT JOIN departments dep ON dep.id = d.department_id
+    WHERE d.id = ${id}::uuid
   `;
   return rows[0] || null;
 }
@@ -90,25 +108,30 @@ export async function selectDelegateCollegeId(delegateId) {
   return d?.collegeId ?? null;
 }
 
-export async function insertDelegate({ name, collegeId, contact, notes, status, addedBy }) {
-  const statusVal =
-    !status || status === "" ? "soft_yes" : status;
+export async function insertDelegate({ name, collegeId, schoolId, departmentId, contact, notes, status, addedBy, regNumber }) {
+  const statusVal = !status || status === "" ? "soft_yes" : status;
   const row = await prisma.delegate.create({
     data: {
       name,
       collegeId,
+      schoolId: schoolId ?? null,
+      departmentId: departmentId ?? null,
       contact: contact ?? null,
       notes: notes ?? null,
       status: statusVal,
       addedById: addedBy ?? null,
+      regNumber: regNumber ?? null,
     },
     select: {
       id: true,
       name: true,
       collegeId: true,
+      schoolId: true,
+      departmentId: true,
       contact: true,
       notes: true,
       status: true,
+      regNumber: true,
       createdAt: true,
     },
   });
@@ -116,9 +139,12 @@ export async function insertDelegate({ name, collegeId, contact, notes, status, 
     id: row.id,
     name: row.name,
     college_id: row.collegeId,
+    school_id: row.schoolId,
+    department_id: row.departmentId,
     contact: row.contact,
     notes: row.notes,
     status: row.status,
+    reg_number: row.regNumber,
     created_at: row.createdAt,
   };
 }
@@ -128,9 +154,7 @@ export async function updateDelegateFields(id, patch) {
   if (Object.prototype.hasOwnProperty.call(patch, "name")) data.name = patch.name;
   if (Object.prototype.hasOwnProperty.call(patch, "contact")) data.contact = patch.contact;
   if (Object.prototype.hasOwnProperty.call(patch, "notes")) data.notes = patch.notes;
-  if (!Object.keys(data).length) {
-    return selectDelegateById(id);
-  }
+  if (!Object.keys(data).length) return selectDelegateById(id);
   try {
     const row = await prisma.delegate.update({
       where: { id },
@@ -221,32 +245,27 @@ export async function selectDelegateDetailHistory(delegateId) {
   const [contacts, statusHist, assignees] = await Promise.all([
     prisma.$queryRaw`
       SELECT dr.id, dr.contact_date::text, dr.was_contacted, dr.outcome::text AS outcome, dr.notes,
-              u.name AS contacted_by_name
-       FROM daily_register dr
-       LEFT JOIN users u ON u.id = dr.contacted_by
-       WHERE dr.delegate_id = ${delegateId}::uuid
-       ORDER BY dr.contact_date DESC, dr.created_at DESC
+             u.name AS contacted_by_name
+      FROM daily_register dr
+      LEFT JOIN users u ON u.id = dr.contacted_by
+      WHERE dr.delegate_id = ${delegateId}::uuid
+      ORDER BY dr.contact_date DESC, dr.created_at DESC
     `,
     prisma.$queryRaw`
       SELECT sh.id, sh.old_status, sh.new_status, sh.changed_at, sh.notes, u.name AS changed_by_name
-       FROM status_history sh
-       LEFT JOIN users u ON u.id = sh.changed_by
-       WHERE sh.delegate_id = ${delegateId}::uuid
-       ORDER BY sh.changed_at DESC
+      FROM status_history sh
+      LEFT JOIN users u ON u.id = sh.changed_by
+      WHERE sh.delegate_id = ${delegateId}::uuid
+      ORDER BY sh.changed_at DESC
     `,
     prisma.$queryRaw`
       SELECT u.id, u.name, u.email
-       FROM delegate_assignments da
-       JOIN users u ON u.id = da.team_member_id
-       WHERE da.delegate_id = ${delegateId}::uuid
+      FROM delegate_assignments da
+      JOIN users u ON u.id = da.team_member_id
+      WHERE da.delegate_id = ${delegateId}::uuid
     `,
   ]);
-
-  return {
-    contacts,
-    status_history: statusHist,
-    assignees,
-  };
+  return { contacts, status_history: statusHist, assignees };
 }
 
 export async function selectCollegeIdsForTeamMember(teamMemberId) {
@@ -293,6 +312,8 @@ export async function bulkInsertDelegates(rows) {
           name: row.name,
           regNumber: row.reg_number || null,
           collegeId: row.college_id,
+          schoolId: row.school_id || null,
+          departmentId: row.department_id || null,
           contact: row.contact || null,
           notes: row.notes || null,
           status: row.status || "soft_yes",
@@ -311,7 +332,11 @@ export async function bulkInsertDelegates(rows) {
 export async function selectAllDelegatesForExport(collegeId = null) {
   return prisma.delegate.findMany({
     where: collegeId ? { collegeId } : {},
-    include: { college: { select: { name: true, code: true } } },
+    include: {
+      college: { select: { name: true, code: true } },
+      school: { select: { name: true, code: true } },
+      department: { select: { name: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
 }

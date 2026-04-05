@@ -16,6 +16,8 @@ import delegatesRoutes from "./src/routes/delegates.routes.js";
 import registerRoutes from "./src/routes/register.routes.js";
 import dashboardRoutes from "./src/routes/dashboard.routes.js";
 import collegesRoutes from "./src/routes/colleges.routes.js";
+import schoolsRoutes from "./src/routes/schools.routes.js";
+import departmentsRoutes from "./src/routes/departments.routes.js";
 
 const app = express();
 
@@ -52,6 +54,8 @@ app.use("/api/delegates", delegatesRoutes);
 app.use("/api/register", registerRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/colleges", collegesRoutes);
+app.use("/api/schools", schoolsRoutes);
+app.use("/api/departments", departmentsRoutes);
 
 app.use((req, res) => {
   res.status(404).json(errorResponse("Not found"));

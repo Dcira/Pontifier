@@ -38,10 +38,39 @@ model College {
   name      String   @unique @db.VarChar(100)
   code      String   @unique @db.VarChar(20)
   createdAt DateTime @default(now()) @map("created_at")
+
   users     User[]
   delegates Delegate[]
+  schools   School[]
 
   @@map("colleges")
+}
+
+model School {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  code      String   @db.VarChar(20)
+  collegeId Int      @map("college_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  college     College      @relation(fields: [collegeId], references: [id])
+  departments Department[]
+  delegates   Delegate[]
+
+  @@unique([collegeId, code])
+  @@map("schools")
+}
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  schoolId  Int      @map("school_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  school    School     @relation(fields: [schoolId], references: [id])
+  delegates Delegate[]
+
+  @@map("departments")
 }
 
 model User {
@@ -57,9 +86,9 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
-  college       College? @relation(fields: [collegeId], references: [id])
-  createdBy     User?    @relation("UserCreatedUsers", fields: [createdById], references: [id])
-  createdUsers  User[]   @relation("UserCreatedUsers")
+  college      College? @relation(fields: [collegeId], references: [id])
+  createdBy    User?    @relation("UserCreatedUsers", fields: [createdById], references: [id])
+  createdUsers User[]   @relation("UserCreatedUsers")
 
   refreshTokens RefreshToken[]
 
@@ -73,25 +102,31 @@ model User {
 }
 
 model Delegate {
-  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name      String
-  collegeId Int              @map("college_id")
-  contact   String?          @db.VarChar(20)
-  notes     String?
-  status    DelegateStatus   @default(soft_yes)
-  addedById String?          @map("added_by") @db.Uuid
-  regNumber String?          @unique @map("reg_number") @db.VarChar(50)
-  createdAt DateTime         @default(now()) @map("created_at")
-  updatedAt DateTime         @default(now()) @updatedAt @map("updated_at")
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  collegeId    Int            @map("college_id")
+  schoolId     Int?           @map("school_id")
+  departmentId Int?           @map("department_id")
+  contact      String?        @db.VarChar(20)
+  notes        String?
+  status       DelegateStatus @default(soft_yes)
+  addedById    String?        @map("added_by") @db.Uuid
+  regNumber    String?        @unique @map("reg_number") @db.VarChar(50)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at")
 
-  college  College  @relation(fields: [collegeId], references: [id])
-  addedBy  User?    @relation("DelegateAddedBy", fields: [addedById], references: [id])
+  college    College     @relation(fields: [collegeId], references: [id])
+  school     School?     @relation(fields: [schoolId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  addedBy    User?       @relation("DelegateAddedBy", fields: [addedById], references: [id])
 
   assignments    DelegateAssignment[]
   dailyRegisters DailyRegister[]
   statusHistory  StatusHistory[]
 
   @@index([collegeId])
+  @@index([schoolId])
+  @@index([departmentId])
   @@index([status])
   @@map("delegates")
 }
@@ -114,14 +149,14 @@ model DelegateAssignment {
 }
 
 model DailyRegister {
-  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  delegateId    String            @map("delegate_id") @db.Uuid
-  contactedById String?           @map("contacted_by") @db.Uuid
-  contactDate   DateTime          @map("contact_date") @db.Date
-  wasContacted  Boolean           @default(false) @map("was_contacted")
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  delegateId    String          @map("delegate_id") @db.Uuid
+  contactedById String?         @map("contacted_by") @db.Uuid
+  contactDate   DateTime        @map("contact_date") @db.Date
+  wasContacted  Boolean         @default(false) @map("was_contacted")
   outcome       RegisterOutcome?
   notes         String?
-  createdAt     DateTime          @default(now()) @map("created_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
   updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at")
 
   delegate    Delegate @relation(fields: [delegateId], references: [id], onDelete: Cascade)

@@ -25,6 +25,8 @@ import { prisma } from "../config/db.js";
 function listFilters(query) {
   return {
     college_id: query.college_id,
+    school_id: query.school_id,
+    department_id: query.department_id,
     status: query.status,
     search: query.search,
     assigned_to: query.assigned_to,
@@ -39,9 +41,7 @@ export async function listDelegates(req, res, next) {
     if (role === "admin") {
       rows = await selectDelegatesForAdmin(f);
     } else if (role === "college_manager") {
-      if (!collegeId) {
-        throw new AppError(403, "College scope missing");
-      }
+      if (!collegeId) throw new AppError(403, "College scope missing");
       rows = await selectDelegatesForCollegeManager(collegeId, f);
     } else {
       rows = await selectDelegatesForTeamMember(id, f);
@@ -51,13 +51,16 @@ export async function listDelegates(req, res, next) {
     next(e);
   }
 }
+
 export async function createDelegate(req, res, next) {
   try {
-    const { name, college_id, contact, notes, status, reg_number } = req.body;
+    const { name, college_id, school_id, department_id, contact, notes, status, reg_number } = req.body;
     const row = await insertDelegate({
       name,
       regNumber: reg_number || null,
       collegeId: college_id,
+      schoolId: school_id ? Number(school_id) : null,
+      departmentId: department_id ? Number(department_id) : null,
       contact,
       notes,
       status,
@@ -73,9 +76,7 @@ export async function patchDelegate(req, res, next) {
   try {
     const { id } = req.params;
     const access = await canAccessDelegate(id, req.user.role, req.user.id, req.user.college_id);
-    if (!access.ok) {
-      throw new AppError(404, "Delegate not found");
-    }
+    if (!access.ok) throw new AppError(404, "Delegate not found");
     if (req.user.role === "college_manager" && Number(access.delegate.college_id) !== Number(req.user.college_id)) {
       throw new AppError(403, "Cannot edit delegates outside your college");
     }
@@ -83,9 +84,7 @@ export async function patchDelegate(req, res, next) {
     if (Object.prototype.hasOwnProperty.call(req.body, "name")) patch.name = req.body.name;
     if (Object.prototype.hasOwnProperty.call(req.body, "contact")) patch.contact = req.body.contact;
     if (Object.prototype.hasOwnProperty.call(req.body, "notes")) patch.notes = req.body.notes;
-    if (!Object.keys(patch).length) {
-      throw new AppError(400, "No fields to update");
-    }
+    if (!Object.keys(patch).length) throw new AppError(400, "No fields to update");
     const updated = await updateDelegateFields(id, patch);
     res.json(successResponse({ delegate: updated }));
   } catch (e) {
@@ -98,9 +97,7 @@ export async function patchDelegateStatus(req, res, next) {
     const { id } = req.params;
     const { new_status, notes } = req.body;
     const access = await canAccessDelegate(id, req.user.role, req.user.id, req.user.college_id);
-    if (!access.ok) {
-      throw new AppError(404, "Delegate not found");
-    }
+    if (!access.ok) throw new AppError(404, "Delegate not found");
     if (req.user.role === "college_manager" && Number(access.delegate.college_id) !== Number(req.user.college_id)) {
       throw new AppError(403, "Cannot update status for delegates outside your college");
     }
@@ -126,12 +123,8 @@ export async function patchDelegateStatus(req, res, next) {
     try {
       const io = getIo();
       io.to("admin_room").emit("delegate_status_updated", payload);
-      if (collegeId) {
-        io.to(`college_${collegeId}`).emit("delegate_status_updated", payload);
-      }
-    } catch {
-      /* socket optional during tests */
-    }
+      if (collegeId) io.to(`college_${collegeId}`).emit("delegate_status_updated", payload);
+    } catch { /* socket optional */ }
 
     res.json(successResponse({ delegate: updated }));
   } catch (e) {
@@ -144,13 +137,9 @@ export async function assignDelegate(req, res, next) {
     const { id } = req.params;
     const { team_member_id } = req.body;
     const tm = await assertTeamMemberRole(team_member_id);
-    if (!tm) {
-      throw new AppError(400, "Invalid team member");
-    }
+    if (!tm) throw new AppError(400, "Invalid team member");
     const del = await selectDelegateById(id);
-    if (!del) {
-      throw new AppError(404, "Delegate not found");
-    }
+    if (!del) throw new AppError(404, "Delegate not found");
     const inserted = await insertDelegateAssignment({
       delegateId: id,
       teamMemberId: team_member_id,
@@ -166,9 +155,7 @@ export async function unassignDelegate(req, res, next) {
   try {
     const { id, team_member_id } = req.params;
     const ok = await deleteDelegateAssignment(id, team_member_id);
-    if (!ok) {
-      throw new AppError(404, "Assignment not found");
-    }
+    if (!ok) throw new AppError(404, "Assignment not found");
     res.json(successResponse({ removed: true }));
   } catch (e) {
     next(e);
@@ -179,17 +166,10 @@ export async function getDelegate(req, res, next) {
   try {
     const { id } = req.params;
     const access = await canAccessDelegate(id, req.user.role, req.user.id, req.user.college_id);
-    if (!access.ok) {
-      throw new AppError(404, "Delegate not found");
-    }
+    if (!access.ok) throw new AppError(404, "Delegate not found");
     const delegate = access.delegate;
     const history = await selectDelegateDetailHistory(id);
-    res.json(
-      successResponse({
-        delegate,
-        ...history,
-      })
-    );
+    res.json(successResponse({ delegate, ...history }));
   } catch (e) {
     next(e);
   }
@@ -198,8 +178,8 @@ export async function getDelegate(req, res, next) {
 export async function downloadTemplate(req, res, next) {
   try {
     const ws = XLSX.utils.aoa_to_sheet([
-      ["registration_number", "name", "college_code", "contact", "status", "notes"],
-      ["REG/2024/001", "John Doe", "CSE", "0712345678", "soft_yes", "Sample note"],
+      ["registration_number", "name", "college_code", "school_code", "department_name", "contact", "status", "notes"],
+      ["REG/2024/001", "John Doe", "COHES", "SOPHARM", "Pharmacy", "0712345678", "soft_yes", "Sample note"],
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Delegates");
@@ -222,14 +202,39 @@ export async function importDelegates(req, res, next) {
     const colleges = await prisma.college.findMany();
     const collegeMap = Object.fromEntries(colleges.map((c) => [c.code.toLowerCase(), c.id]));
 
+    const schools = await prisma.school.findMany();
+    const schoolMap = Object.fromEntries(schools.map((s) => [s.code.toLowerCase(), s]));
+
+    const departments = await prisma.department.findMany();
+    const deptMap = Object.fromEntries(
+      departments.map((d) => [`${d.schoolId}::${d.name.toLowerCase()}`, d.id])
+    );
+
     const mapped = rows.map((r, i) => {
       const code = String(r.college_code || "").toLowerCase();
       const college_id = collegeMap[code];
       if (!college_id) throw new AppError(400, `Row ${i + 2}: unknown college_code "${r.college_code}"`);
+
+      let school_id = null;
+      let department_id = null;
+
+      if (r.school_code) {
+        const school = schoolMap[String(r.school_code).toLowerCase()];
+        if (school) {
+          school_id = school.id;
+          if (r.department_name) {
+            const deptKey = `${school.id}::${String(r.department_name).toLowerCase()}`;
+            department_id = deptMap[deptKey] || null;
+          }
+        }
+      }
+
       return {
         name: r.name,
         reg_number: r.registration_number || null,
         college_id,
+        school_id,
+        department_id,
         contact: r.contact ? String(r.contact) : null,
         status: r.status || "soft_yes",
         notes: r.notes || null,
@@ -255,6 +260,9 @@ export async function exportDelegates(req, res, next) {
       name: d.name,
       college: d.college?.name || "",
       college_code: d.college?.code || "",
+      school: d.school?.name || "",
+      school_code: d.school?.code || "",
+      department: d.department?.name || "",
       contact: d.contact || "",
       status: d.status,
       notes: d.notes || "",
