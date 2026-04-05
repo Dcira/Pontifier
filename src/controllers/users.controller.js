@@ -3,17 +3,12 @@ import {
   selectUsersFiltered,
   selectUserDetailStats,
   setUserActive,
+  deleteUserById,
 } from "../queries/users.queries.js";
 import { hashPassword, generateTempPassword } from "../utils/password.utils.js";
 import { successResponse } from "../utils/response.utils.js";
 import { AppError } from "../utils/appError.js";
-import {
-  insertUser,
-  selectUsersFiltered,
-  selectUserDetailStats,
-  setUserActive,
-  deleteUserById,
-} from "../queries/users.queries.js";
+
 
 export async function listUsers(req, res, next) {
   try {
