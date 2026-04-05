@@ -131,3 +131,6 @@ export async function setUserActive(userId, isActive) {
     return null;
   }
 }
+export async function deleteUserById(id) {
+  return prisma.user.delete({ where: { id } });
+}

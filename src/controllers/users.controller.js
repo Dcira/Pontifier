@@ -7,6 +7,13 @@ import {
 import { hashPassword, generateTempPassword } from "../utils/password.utils.js";
 import { successResponse } from "../utils/response.utils.js";
 import { AppError } from "../utils/appError.js";
+import {
+  insertUser,
+  selectUsersFiltered,
+  selectUserDetailStats,
+  setUserActive,
+  deleteUserById,
+} from "../queries/users.queries.js";
 
 export async function listUsers(req, res, next) {
   try {
@@ -85,6 +92,19 @@ export async function getUserById(req, res, next) {
       throw new AppError(404, "User not found");
     }
     res.json(successResponse({ user: detail }));
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function deleteUser(req, res, next) {
+  try {
+    const { id } = req.params;
+    if (id === req.user.id) {
+      throw new AppError(400, "You cannot delete your own account");
+    }
+    await deleteUserById(id);
+    res.json(successResponse({ message: "User deleted successfully" }));
   } catch (e) {
     next(e);
   }

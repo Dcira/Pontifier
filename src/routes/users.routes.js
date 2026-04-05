@@ -19,5 +19,5 @@ router.post("/", createUserValidators, validateRequest, usersController.createUs
 router.get("/:id", userIdParam, validateRequest, usersController.getUserById);
 router.patch("/:id/deactivate", userIdParam, validateRequest, usersController.deactivateUser);
 router.patch("/:id/activate", userIdParam, validateRequest, usersController.activateUser);
-
+router.delete("/:id", userIdParam, validateRequest, usersController.deleteUser);
 export default router;
