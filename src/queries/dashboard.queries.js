@@ -1,14 +1,8 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../config/db.js";
 
 export async function selectDashboardStats() {
-  const [
-    total,
-    confirmed,
-    softYes,
-    cold,
-    lost,
-    contactedRows,
-  ] = await Promise.all([
+  const [total, confirmed, softYes, cold, lost, contactedRows] = await Promise.all([
     prisma.delegate.count(),
     prisma.delegate.count({ where: { status: "confirmed" } }),
     prisma.delegate.count({ where: { status: "soft_yes" } }),
@@ -39,23 +33,23 @@ export async function selectDashboardStats() {
 export async function selectCollegeBreakdown() {
   return prisma.$queryRaw`
     SELECT c.id, c.name, c.code,
-            COUNT(d.id)::int AS total_delegates,
-            COUNT(d.id) FILTER (WHERE d.status = 'confirmed'::delegate_status)::int AS confirmed,
-            COUNT(d.id) FILTER (WHERE d.status = 'soft_yes'::delegate_status)::int AS soft_yes,
-            COUNT(d.id) FILTER (WHERE d.status = 'cold'::delegate_status)::int AS cold,
-            COUNT(d.id) FILTER (WHERE d.status = 'lost'::delegate_status)::int AS lost,
-            (
-              SELECT COUNT(DISTINCT dr.delegate_id)::int
-              FROM daily_register dr
-              JOIN delegates d2 ON d2.id = dr.delegate_id
-              WHERE d2.college_id = c.id
-                AND dr.contact_date = CURRENT_DATE
-                AND dr.was_contacted = TRUE
-            ) AS contacted_today
-     FROM colleges c
-     LEFT JOIN delegates d ON d.college_id = c.id
-     GROUP BY c.id, c.name, c.code
-     ORDER BY c.id
+           COUNT(d.id)::int AS total_delegates,
+           COUNT(d.id) FILTER (WHERE d.status = 'confirmed'::delegate_status)::int AS confirmed,
+           COUNT(d.id) FILTER (WHERE d.status = 'soft_yes'::delegate_status)::int AS soft_yes,
+           COUNT(d.id) FILTER (WHERE d.status = 'cold'::delegate_status)::int AS cold,
+           COUNT(d.id) FILTER (WHERE d.status = 'lost'::delegate_status)::int AS lost,
+           (
+             SELECT COUNT(DISTINCT dr.delegate_id)::int
+             FROM daily_register dr
+             JOIN delegates d2 ON d2.id = dr.delegate_id
+             WHERE d2.college_id = c.id
+               AND dr.contact_date = CURRENT_DATE
+               AND dr.was_contacted = TRUE
+           ) AS contacted_today
+    FROM colleges c
+    LEFT JOIN delegates d ON d.college_id = c.id
+    GROUP BY c.id, c.name, c.code
+    ORDER BY c.id
   `;
 }
 
@@ -64,22 +58,23 @@ export async function selectDailyActivity(days) {
   const startOffset = d - 1;
   return prisma.$queryRaw`
     WITH days AS (
-       SELECT generate_series(
-         CURRENT_DATE - CAST(${startOffset} AS INTEGER),
-         CURRENT_DATE,
-         '1 day'::interval
-       )::date AS day
-     )
-     SELECT d.day::text AS date,
-            COUNT(dr.id) FILTER (WHERE dr.was_contacted = TRUE)::int AS total_contacts,
-            COUNT(DISTINCT dr.delegate_id) FILTER (WHERE dr.was_contacted = TRUE)::int AS unique_delegates,
-            COUNT(dr.id) FILTER (WHERE dr.outcome = 'confirmed'::register_outcome)::int AS confirmed_outcomes
-     FROM days d
-     LEFT JOIN daily_register dr ON dr.contact_date = d.day
-     GROUP BY d.day
-     ORDER BY d.day
+      SELECT generate_series(
+        CURRENT_DATE - CAST(${startOffset} AS INTEGER),
+        CURRENT_DATE,
+        '1 day'::interval
+      )::date AS day
+    )
+    SELECT d.day::text AS date,
+           COUNT(dr.id) FILTER (WHERE dr.was_contacted = TRUE)::int AS total_contacts,
+           COUNT(DISTINCT dr.delegate_id) FILTER (WHERE dr.was_contacted = TRUE)::int AS unique_delegates,
+           COUNT(dr.id) FILTER (WHERE dr.outcome = 'confirmed'::register_outcome)::int AS confirmed_outcomes
+    FROM days d
+    LEFT JOIN daily_register dr ON dr.contact_date = d.day
+    GROUP BY d.day
+    ORDER BY d.day
   `;
 }
+
 export async function selectRecentActivity(limit = 20) {
   const rows = await prisma.dailyRegister.findMany({
     take: limit,
@@ -100,6 +95,7 @@ export async function selectRecentActivity(limit = 20) {
     contacted_by_name: dr.contactedBy?.name ?? null,
   }));
 }
+
 export async function selectTopCanvassers(limit = 5) {
   const rows = await prisma.$queryRaw`
     SELECT
@@ -116,11 +112,78 @@ export async function selectTopCanvassers(limit = 5) {
     ORDER BY contacts_total DESC
     LIMIT ${limit}
   `;
-  return rows.map(r => ({
-    user_id: Number(r.user_id),
+  return rows.map((r) => ({
+    user_id: r.user_id,
     name: r.name,
-    college: r.college ?? '—',
+    college: r.college ?? "—",
     contacts_total: Number(r.contacts_total),
     confirmed_count: Number(r.confirmed_count),
   }));
+}
+
+// ── New analytics queries ─────────────────────────────────────────────────
+
+export async function selectBestDays() {
+  return prisma.$queryRaw`
+    SELECT
+      TO_CHAR(contact_date, 'Day') AS day_name,
+      EXTRACT(DOW FROM contact_date)::int AS day_num,
+      COUNT(*)::int AS total_contacts,
+      COUNT(*) FILTER (WHERE outcome = 'confirmed'::register_outcome)::int AS confirmed_count,
+      COUNT(*) FILTER (WHERE outcome = 'soft_yes'::register_outcome)::int AS soft_yes_count
+    FROM daily_register
+    WHERE was_contacted = TRUE
+    GROUP BY day_name, day_num
+    ORDER BY day_num
+  `;
+}
+
+export async function selectCollegeResponsiveness() {
+  return prisma.$queryRaw`
+    SELECT
+      c.id,
+      c.name,
+      c.code,
+      COUNT(DISTINCT d.id)::int AS total_delegates,
+      COUNT(DISTINCT dr.delegate_id) FILTER (WHERE dr.was_contacted = TRUE)::int AS ever_contacted,
+      COUNT(DISTINCT dr.delegate_id) FILTER (
+        WHERE dr.was_contacted = TRUE
+        AND dr.contact_date >= CURRENT_DATE - INTERVAL '7 days'
+      )::int AS contacted_this_week,
+      COUNT(DISTINCT d2.id) FILTER (WHERE d2.status = 'confirmed'::delegate_status)::int AS confirmed
+    FROM colleges c
+    LEFT JOIN delegates d ON d.college_id = c.id
+    LEFT JOIN delegates d2 ON d2.college_id = c.id
+    LEFT JOIN daily_register dr ON dr.delegate_id = d.id
+    GROUP BY c.id, c.name, c.code
+    ORDER BY ever_contacted DESC
+  `;
+}
+
+export async function selectTeamPerformance() {
+  return prisma.$queryRaw`
+    SELECT
+      u.id,
+      u.name,
+      u.role::text AS role,
+      c.code AS college_code,
+      COUNT(da.id)::int AS assigned_delegates,
+      COUNT(dr.id) FILTER (WHERE dr.was_contacted = TRUE)::int AS total_contacts,
+      COUNT(dr.id) FILTER (WHERE dr.outcome = 'confirmed'::register_outcome)::int AS confirmed_count,
+      COUNT(dr.id) FILTER (
+        WHERE dr.was_contacted = TRUE
+        AND dr.contact_date = CURRENT_DATE
+      )::int AS contacts_today,
+      COUNT(dr.id) FILTER (
+        WHERE dr.was_contacted = TRUE
+        AND dr.contact_date >= CURRENT_DATE - INTERVAL '6 days'
+      )::int AS contacts_this_week
+    FROM users u
+    LEFT JOIN colleges c ON c.id = u.college_id
+    LEFT JOIN delegate_assignments da ON da.team_member_id = u.id
+    LEFT JOIN daily_register dr ON dr.contacted_by = u.id
+    WHERE u.is_active = TRUE
+    GROUP BY u.id, u.name, u.role, c.code
+    ORDER BY total_contacts DESC
+  `;
 }

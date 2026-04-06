@@ -12,6 +12,11 @@ router.get("/stats", dashboardController.getStats);
 router.get("/college-breakdown", dashboardController.getCollegeBreakdown);
 router.get("/daily-activity", dashboardController.getDailyActivity);
 router.get("/recent-activity", dashboardController.getRecentActivity);
-
 router.get("/top-canvassers", dashboardController.getTopCanvassers);
+
+// Analytics
+router.get("/best-days", dashboardController.getBestDays);
+router.get("/college-responsiveness", dashboardController.getCollegeResponsiveness);
+router.get("/team-performance", dashboardController.getTeamPerformance);
+
 export default router;

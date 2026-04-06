@@ -3,8 +3,13 @@ import {
   selectCollegeBreakdown,
   selectDailyActivity,
   selectRecentActivity,
+  selectTopCanvassers,
+  selectBestDays,
+  selectCollegeResponsiveness,
+  selectTeamPerformance,
 } from "../queries/dashboard.queries.js";
 import { successResponse } from "../utils/response.utils.js";
+
 export async function getStats(req, res, next) {
   try {
     const stats = await selectDashboardStats();
@@ -43,12 +48,40 @@ export async function getRecentActivity(req, res, next) {
     next(e);
   }
 }
-import { selectTopCanvassers } from "../queries/dashboard.queries.js";
 
 export async function getTopCanvassers(req, res, next) {
   try {
     const rows = await selectTopCanvassers(5);
     res.json(successResponse({ canvassers: rows }));
+  } catch (e) {
+    next(e);
+  }
+}
+
+// ── New analytics endpoints ───────────────────────────────────────────────
+
+export async function getBestDays(req, res, next) {
+  try {
+    const rows = await selectBestDays();
+    res.json(successResponse({ days: rows }));
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getCollegeResponsiveness(req, res, next) {
+  try {
+    const rows = await selectCollegeResponsiveness();
+    res.json(successResponse({ colleges: rows }));
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function getTeamPerformance(req, res, next) {
+  try {
+    const rows = await selectTeamPerformance();
+    res.json(successResponse({ members: rows }));
   } catch (e) {
     next(e);
   }
