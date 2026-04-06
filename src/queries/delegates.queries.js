@@ -277,9 +277,10 @@ export async function selectCollegeIdsForTeamMember(teamMemberId) {
   return ids;
 }
 
+// Accept any active user — not just team members
 export async function assertTeamMemberRole(userId) {
   const u = await prisma.user.findFirst({
-    where: { id: userId, role: "team_member", isActive: true },
+    where: { id: userId, isActive: true },
     select: { id: true },
   });
   return u || null;
