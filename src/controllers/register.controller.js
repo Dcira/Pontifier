@@ -45,7 +45,8 @@ function eachDateInclusive(fromStr, toStr) {
 
 export async function getRegister(req, res, next) {
   try {
-    const monday = startOfWeekMonday(new Date());
+    const clientDate = req.query.date_from ? new Date(req.query.date_from) : new Date();
+    const monday = startOfWeekMonday(clientDate);
     const sunday = endOfWeekFromStart(monday);
     let dateFrom = req.query.date_from || toYmd(monday);
     let dateTo = req.query.date_to || toYmd(sunday);
