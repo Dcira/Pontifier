@@ -17,6 +17,10 @@ function toYmd(d) {
   return `${y}-${m}-${day}`;
 }
 
+function getKenyaDate() {
+  return new Date(Date.now() + 3 * 60 * 60 * 1000);
+}
+
 function startOfWeekMonday(ref) {
   const x = new Date(ref);
   x.setHours(0, 0, 0, 0);
@@ -45,7 +49,7 @@ function eachDateInclusive(fromStr, toStr) {
 
 export async function getRegister(req, res, next) {
   try {
-    const clientDate = req.query.date_from ? new Date(req.query.date_from) : new Date();
+    const clientDate = req.query.date_from ? new Date(req.query.date_from) : getKenyaDate();
     const monday = startOfWeekMonday(clientDate);
     const sunday = endOfWeekFromStart(monday);
     let dateFrom = req.query.date_from || toYmd(monday);
@@ -120,12 +124,12 @@ export async function postRegister(req, res, next) {
       throw new AppError(404, "Delegate not found");
     }
 
-    const today = toYmd(new Date());
+    const today = toYmd(getKenyaDate());
     if (contact_date > today) {
       throw new AppError(400, "contact_date cannot be in the future");
     }
-    const cd = new Date(`${contact_date}T12:00:00`);
-    const t = new Date(`${today}T12:00:00`);
+    const cd = new Date(`${contact_date}T12:00:00+03:00`);
+    const t = new Date(`${today}T12:00:00+03:00`);
     const diffDays = Math.floor((t - cd) / (86400000));
     if (diffDays > 7) {
       throw new AppError(400, "contact_date cannot be more than 7 days in the past");
